@@ -1,0 +1,42 @@
+# Akcja ta odpowiada za usunięcie środowiska testowego, które zostało stworzone automatycznie na potrzeby pull requestu
+name: Delete PR Environment when PR is closed
+
+# Akcja uruchamia się w momencie zamknięcia pull requestu
+on:
+  pull_request:
+    types: [closed]
+
+# To ustawienie chroni przed konfliktem pomiędzy akcjami i zapewnia, 
+# że ta akcja nie może działać jednocześnie z akcją odpowiedzialną za utworzenie środowiska testowego oraz wdrożenie na nim aplikacji
+concurrency: 
+  group: ci-${{ github.event.number }}
+  cancel-in-progress: true
+
+# Ustawienie zmiennych środowiskowych używanych podczas akcji
+env:
+  WEBAPP_NAME: agh-2024-webapp-123
+  RESOURCE_GROUP: AGH-md-test
+  SLOT_NAME: pr-${{ github.event.number }}
+
+# Permisje pozwalające na zalogowanie do Azure przy pomocy federated credentials
+permissions:
+  id-token: write
+  contents: read
+  
+jobs:
+  delete-slot:
+    runs-on: ubuntu-latest
+
+# Logowanie do Azure przy użyciu Federated Credentials
+    steps:
+    - name: Login to Azure
+      uses: Azure/login@v2
+      with:
+        client-id: ${{ secrets.WEB_APP_CLIENT_ID }}
+        tenant-id: ${{ secrets.WEB_APP_DIRECTORY_ID }}
+        subscription-id: ${{ secrets.WEB_APP_SUBSCRIPTION_ID }} 
+        enable-AzPSSession: true
+
+# Usuwanie testowego deployment slotu. Nazwa slotu odpowiada numerowi pull requestu, który jest unikalny.
+    - name: Delete testing slot
+      run: az webapp deployment slot delete --resource-group $RESOURCE_GROUP  --name $WEBAPP_NAME --slot $SLOT_NAME
