@@ -12,7 +12,7 @@ concurrency: ci-${{ github.event.number }}
 
 # Ustawienie zmiennych środowiskowych wykorzystywanych podczas wykonywania akcji
 env:
-  WEBAPP_NAME: AGH-mdtest
+  WEBAPP_NAME: agh-2024-webapp-123
   RESOURCE_GROUP: AGH-md-test
   SLOT_NAME: pr-${{ github.event.number }}
   AZURE_WEBAPP_PACKAGE_PATH: './publish'
