@@ -1,0 +1,112 @@
+# Akcja odpowiadająca za wrzucenie aplikacji na środowisko stagingowe, a następnie Produkcyjne
+name: Deploy To Production with Staging Check
+
+# Akcja odpalana jest w momencie pusha do brancha 'master'
+on:
+  push:
+    branches:
+      - 'master'
+  workflow_dispatch:
+
+# Ustawienie zmiennych środowiskowych używanych w trakcie akcji
+env:
+  WEBAPP_NAME: agh-2024-webapp-123
+  RESOURCE_GROUP: AGH-md-test
+  SLOT_NAME: staging
+  AZURE_WEBAPP_PACKAGE_PATH: './publish'
+
+# Permisje potrzebne do zalogowanie się do Azure przy użyciu Federated Credentials
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+# Przygotowanie środowiska pod budowę aplikacji
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: '6.0.x'
+        include-prerelease: false
+
+# Zbudowanie aplikacji
+    - name: Build with dotnet
+      run: dotnet build ./eShopOnWeb.sln --configuration Release
+
+# Uruchomienie testów jednostkowych
+    - name: Run Unit Tests
+      run: dotnet test ./tests/UnitTests/UnitTests.csproj --configuration Release
+
+# Uruchomienie testów funkcjonalnych
+    - name: Run Functional Tests
+      run: dotnet test ./tests/FunctionalTests/FunctionalTests.csproj --configuration Release
+
+# Stworzenie paczki z aplikacją
+    - name: Publish Build Artifacts
+      run: dotnet publish ./src/Web/Web.csproj -c Release -o ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}/eShopOnWeb
+
+# Opublikowanie paczki z aplikacją w celu pobrania jej w późniejszych krokach
+    - name: Upload artifact for deployment job
+      uses: actions/upload-artifact@v4
+      with:
+        name: eShopOnWeb
+        path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}/eShopOnWeb
+  
+  deploy-to-stage:
+    name: Deploy to staging
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: 'Staging'
+      url: ${{ steps.deploy-to-stage.outputs.webapp-url }}
+
+#Zalogowanie do Azure przy użyciu Federated Credentials
+    steps:
+    - name: Login to Azure
+      uses: Azure/login@v2
+      with:
+        client-id: ${{ secrets.WEB_APP_CLIENT_ID }}
+        tenant-id: ${{ secrets.WEB_APP_DIRECTORY_ID }}
+        subscription-id: ${{ secrets.WEB_APP_SUBSCRIPTION_ID }} 
+        enable-AzPSSession: true
+
+# Pobranie paczki z aplikacją
+    - name: Download artifact from build job
+      uses: actions/download-artifact@v4
+      with:
+        name: eShopOnWeb
+
+# Wdrożenie aplikacji na staginowy deployment slot
+    - name: Deploy to staging environment
+      uses: azure/webapps-deploy@v3
+      id: deploy-to-stage
+      with: 
+        app-name: ${{ env.WEBAPP_NAME }}
+        slot-name:  ${{ env.SLOT_NAME }}
+        package: '.'
+
+# Krok deploymentu na produkcję
+  release-to-prod:
+    name: Release to prod
+    needs: deploy-to-stage
+    runs-on: ubuntu-latest
+    environment:
+      name: 'Production'
+      url: 'https://${{ env.WEBAPP_NAME }}.azurewebsites.net/'
+
+# Ponowne zalogowanie do Azure
+    steps:
+    - name: Login to Azure
+      uses: Azure/login@v2
+      with:
+        client-id: ${{ secrets.WEB_APP_CLIENT_ID }}
+        tenant-id: ${{ secrets.WEB_APP_DIRECTORY_ID }}
+        subscription-id: ${{ secrets.WEB_APP_SUBSCRIPTION_ID }} 
+        enable-AzPSSession: true
+
+# Podmiana slotu staginowego, na który wcześniej została zdeployowana aplikacja na slot produkcyjny
+    - name: Swap slots
+      run: az webapp deployment slot swap -s ${{ env.SLOT_NAME }} -n ${{ env.WEBAPP_NAME }} -g ${{ env.RESOURCE_GROUP }}
