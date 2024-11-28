@@ -1,0 +1,33 @@
+# Akcja odpowiadająca za zbudowanie aplikacji i uruchomienie testów
+name: Build application on feature branch
+
+# Akcja odpala się przy każdym pushu do brancha, który nie jest branchem 'master'
+on:
+  push:
+    branches-ignore:
+      - 'master'
+      
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+# Przygotowanie środowiska pod budowę aplikacji
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: '6.0.x'
+        include-prerelease: false
+
+# Zbudowanie aplikacji
+    - name: Build with dotnet
+      run: dotnet build ./eShopOnWeb.sln --configuration Release
+
+# Uruchomienie testów jednostkowych
+    - name: Run Unit Tests
+      run: dotnet test ./tests/UnitTests/UnitTests.csproj --configuration Release
+
+# Uruchomienie testów funkcjonalnych
+    - name: Run Functional Tests
+      run: dotnet test ./tests/FunctionalTests/FunctionalTests.csproj --configuration Release
